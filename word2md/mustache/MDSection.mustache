@@ -1,0 +1,17 @@
+{{section_level}} {{heading}}
+
+<table>
+{{#table.rows}}
+<tr>
+{{#cells}}
+{{#is_heading}}<th colspan={{colspan}}>{{/is_heading}}{{^is_heading}}<td colspan={{colspan}}>{{/is_heading}}
+{{#paragraphs}}{{#is_heading}}{{{raw_text}}}{{/is_heading}}{{^is_heading}}{{#html_text}}{{{html_text}}}{{/html_text}}{{#graphics}}<p><img src="{{name}}"/></p>{{/graphics}}{{#equations}}<p>{{{mml}}}</p>{{/equations}}{{/is_heading}}{{/paragraphs}}
+{{#is_heading}}</th>{{/is_heading}}{{^is_heading}}</td>{{/is_heading}}
+{{/cells}}
+</tr>
+{{/table.rows}}
+</table>
+
+{{#sections}}
+{{> SCSection}}
+{{/sections}}
