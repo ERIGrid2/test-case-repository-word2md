@@ -1,6 +1,6 @@
 # Word2MD
 
-Tools to convert HTD Test Cases and extensions in Word to Markdown. Also contains the necessary Dockerfiles to run in GitHub workflows.
+Tools to convert HTD Test Cases and extensions in Word to Markdown. Also contains the necessary Dockerfiles to run in a GitHub workflow.
 
 ### Funding acknowledment
 
