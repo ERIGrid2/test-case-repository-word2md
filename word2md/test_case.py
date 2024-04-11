@@ -1,28 +1,29 @@
 import re
-import os
-import argparse
-from datetime import date
-
-from word2md.converter_base import Word2MDConverter, MarkdownDocument
+from word2md.converter_base import Word2MDConverter
+from word2md.markdown_document import (
+    MarkdownDocument,
+    MarkdownSection,
+    MarkdownTable
+)
 
 class TestCaseConverter(Word2MDConverter):
 
     def __init__(self, document, no_emf=False):
         super().__init__(document, no_emf)        
-        self.test_case_headline_regex = re.compile('Test Case\s(.*)')
-        self.test_specification_headline_regex = re.compile('Test Specification\s(.*)')
-        self.experiment_specification_headline_regex = re.compile('Experiment Specification\s(.*)')
+        self.test_case_headline_regex = re.compile('\s*Test\s+Case\s+(.*)')
+        self.test_specification_headline_regex = re.compile('\s*Test\s+Specification\s+(.*)')
+        self.experiment_specification_headline_regex = re.compile('\s*Experiment\s+Specification\s+(.*)')
 
         self.test_case = {'content': None, 'title': None, 'short_title': None, 'description': None, 'id': None}
         self.test_specs = []
         self.exp_specs = []
 
+        self.tc_md_doc = None
+        self.ts_md_docs = {}
+
     def internal_convert(self):
         test_specifications = self.find_test_specifications()
         experiment_specifications = self.find_experiment_specifications()
-
-        tc_md_doc = None
-        ts_md_docs = {}
 
         parsed_documents = []
 
@@ -31,34 +32,21 @@ class TestCaseConverter(Word2MDConverter):
         exp_spec_tables = []
         for table in self.document.tables:
             if self.is_test_case(table):
-                test_case = self.parse_test_case(table)
-                tc_md_doc = MarkdownDocument(test_case, test_case['header']['title'], test_case['header']['link_title'], test_case['header']['description'])
-                parsed_documents.append(tc_md_doc)
+                self.tc_md_doc = self.parse_test_case(table)
+                parsed_documents.append(self.tc_md_doc)
             elif self.is_test_specification(table):
                 test_spec_tables.append(table)
             elif self.is_experiment_specification(table):
                 exp_spec_tables.append(table)
 
-        if tc_md_doc is not None:
+        if self.tc_md_doc is not None:
             for number_test_specs, table in enumerate(test_spec_tables):
                 test_spec = test_specifications[number_test_specs] if number_test_specs < len(test_specifications) else {}
-                content = self.parse_test_specification(table, test_spec)
-                
-                md_doc = MarkdownDocument(content, content['header']['title'], content['header']['link_title'], content['header']['description'])
-                md_doc.parent_docs = [tc_md_doc]
-                ts_md_docs[content['id']] = md_doc
-
+                md_doc = self.parse_test_specification(table, test_spec)
                 parsed_documents.append(md_doc)
-
             for number_experiment_specs, table in enumerate(exp_spec_tables):
                 exp_spec = experiment_specifications[number_experiment_specs] if number_experiment_specs < len(experiment_specifications) else {}
-                content = self.parse_experiment_specification(table, exp_spec)
-
-                md_doc = MarkdownDocument(content, content['header']['title'], content['header']['link_title'], content['header']['description'])
-                md_doc.parent_docs = [tc_md_doc]
-                if content['test_spec_id'] in ts_md_docs:
-                    md_doc.parent_docs.append(ts_md_docs[content['test_spec_id']])
-
+                md_doc = self.parse_experiment_specification(table, exp_spec)
                 parsed_documents.append(md_doc)
 
         return parsed_documents
@@ -119,32 +107,20 @@ class TestCaseConverter(Word2MDConverter):
     def is_heading(self, cell, row_nr, col_nr):
         return False
     
-    def add_simple_row_heading(self, table_dict, *args, row_nr=-1):
-        return self.add_simple_row(table_dict, *args, row_nr=row_nr, heading_cols=[0])
-
-    def add_simple_row(self, table_dict, *args, row_nr=-1, heading_cols=[]):
-        heading_cols = [heading_cols] if not type(heading_cols) == list else heading_cols
-        row_nr = -1 if not type(row_nr) == int else row_nr
-
-        row = self.create_row_dict()
-        for i, arg in enumerate(args):
-            row['cells'].append(self.create_simple_cell_dict(str(arg), is_heading=(i in heading_cols)))
+    def add_simple_row_heading(self, table : MarkdownTable, *args, row_nr=-1):
+        table.add_simple_row(*args, row_nr=row_nr, heading_cols=[0])  
         
-        if not table_dict['rows'] or row_nr == 0:
-            row['first'] = True
-            for r in table_dict['rows']:
-                r['first'] = False
-        table_dict['rows'].insert(row_nr, row)       
-        
-
     def parse_test_case(self, table):
-        sections = []
+        test_case = MarkdownDocument()
+        sections = test_case.sections
         tc_id = ''
 
-        id_section = self.new_section(heading='Identification')
-        id_table = self.create_table_dict(nr_rows=5, nr_cols=2)
-        id_section['table'] = id_table
+        id_section = MarkdownSection(heading='Identification')
+        id_table = MarkdownTable()
+        id_section.tables.append(id_table)
         sections.append(id_section)
+
+        qs_section_paragraphs = []
 
         re_author_version = re.compile('Author:?\s+(.*)\s+Version:?\s+(.*)')
         re_project_date = re.compile('Project:?\s+(.*)\s+Date:?\s+(.*)')
@@ -164,36 +140,29 @@ class TestCaseConverter(Word2MDConverter):
                 break
             if self.is_qualification_strategy_headline(p):
                 is_qs = True
-                qs_section = self.new_section(heading='Qualification Strategy', level=2, text='')
-            elif is_qs:                
-                qs_section['text'] = (qs_section['text'] + '\n' + self.get_paragraph_text(p)).strip()
-                graphics = self.get_inline_graphics(p, self.document)
-                if len(graphics) > 0:
-                    qs_section['graphics'].extend(graphics)
+                qs_section_paragraphs = []
+            elif is_qs:     
+                qs_section_paragraphs.append(p)      
 
         tc_table = self.parse_tc_table(table)
 
         tc_desc = self.get_table_content_from_heading(tc_table, 'Name of the Test Case')
 
-        tc_table_section = self.new_section(heading='Test Case Definition')
-        tc_table_section['table'] = tc_table
+        tc_table_section = MarkdownSection(heading='Test Case Definition')
+        tc_table_section.tables.append(tc_table)
         sections.append(tc_table_section)
         
+        qs_section = MarkdownSection(heading='Qualification Strategy', level=2, paragraphs=self.get_content_from_paragraphs(qs_section_paragraphs))
         sections.append(qs_section)
 
-        tc_header = self.create_section_header(
-            f'Test Case {tc_id}', 
-            tc_id or 'Test Case', 
-            date.today().isoformat(), 
-            tc_desc or 'A Test Case'
-        )
+        test_case.title = f'Test Case {tc_id}'
+        test_case.short_title = tc_id or 'Test Case'
+        test_case.description = tc_desc or 'A Test Case'
 
-        tc_content = self.new_section(sub_sections=sections, header=tc_header)
-
-        return tc_content
+        return test_case
     
-    def get_table_content_from_heading(self, table_dict, heading, compare_callable=None):
-        return self.get_cell_content_from_table(table_dict, heading, 1, 0)
+    def get_table_content_from_heading(self, table : MarkdownTable, heading, compare_callable=None):
+        return table.get_cell_content(heading, 1, 0)
 
     def find_test_specifications(self):
         test_specs = []
@@ -232,113 +201,64 @@ class TestCaseConverter(Word2MDConverter):
         return experiment_specs
 
     def parse_test_specification(self, table, test_spec):
-        ts_table_section = self.new_section('Test Specification Definition')
+        test_spec_doc = MarkdownDocument()
+        ts_table_section = MarkdownSection(heading='Test Specification Definition')
+        test_spec_doc.sections.append(ts_table_section)
         ts_table = self.parse_tc_table(table)
-        ts_id = ''
-        for key in test_spec.keys():
-            if key == 'ID':
-                ts_id = test_spec[key]['desc']
-                self.add_simple_row_heading(ts_table, key, ts_id, row_nr=0)
-            else:
-                self.add_simple_row_heading(ts_table, key, test_spec[key]['desc'])
+        ts_table_section.tables.append(ts_table)
 
-        ts_table_section['table'] = ts_table
+        ts_id = ''
+        if 'ID' in test_spec:
+            ts_id = test_spec['ID']['desc']
+            self.add_simple_row_heading(ts_table, 'ID', ts_id, row_nr=0)
 
         ts_desc = self.get_table_content_from_heading(ts_table, 'Title of Test')
-        
-        extra = {
-            'id': ts_id,
-            'path': ts_id
-        }
-        
-        ts_header = self.create_section_header(
-            f'Test Specification {ts_id}', 
-            ts_id or 'Test Specification', 
-            date.today().isoformat(), 
-            ts_desc or 'A Test Specification'
-        )
 
-        ts_content = self.new_section(sub_sections=[ts_table_section], header=ts_header, **extra)  
-        return ts_content
+        test_spec_doc.title = f'Test Specification {ts_id}'
+        test_spec_doc.short_title = ts_id or 'Test Specification'
+        test_spec_doc.description = ts_desc or 'A Test Specification'
+        
+        test_spec_doc.parent_docs.append(self.tc_md_doc)
+        self.ts_md_docs[test_spec_doc.short_title.strip()] = test_spec_doc
+
+        return test_spec_doc
 
     def parse_experiment_specification(self, table, experiment_spec):
-        es_tabl_section = self.new_section('Test Specification Definition')
+        es_spec_doc = MarkdownDocument()
+        es_tabl_section = MarkdownSection(heading='Experiment Specification Definition')
+        es_spec_doc.sections.append(es_tabl_section)
         es_table = self.parse_tc_table(table)
-        for key in experiment_spec.keys():
-            if key == 'ID':
-                es_id = experiment_spec[key]['desc']
-                self.add_simple_row_heading(es_table, key, es_id, row_nr=0)
-            else:
-                self.add_simple_row_heading(es_table, key, experiment_spec[key]['desc'])
-        es_tabl_section['table'] = es_table
+        es_tabl_section.tables.append(es_table)
+
+        es_id =''
+        if 'ID' in experiment_spec:
+            es_id = experiment_spec['ID']['desc']
+            self.add_simple_row_heading(es_table, 'ID', es_id, row_nr=0)
         
         es_desc = self.get_table_content_from_heading(es_table, 'Title of Experiment')        
-        es_header = self.create_section_header(
-            f'Experiment Specification {es_id}', 
-            es_id or 'Experiment Specification', 
-            date.today().isoformat(), 
-            es_desc or 'An Experiment Specification'
-        )
+        
+        es_spec_doc.title = f'Experiment Specification {es_id}'
+        es_spec_doc.short_title = es_id or 'Experiment Specification' 
+        es_spec_doc.description = es_desc or 'An Experiment Specification'
 
-        extra = {
-            'id': es_id,
-            'test_spec_id': self.get_table_content_from_heading(es_table, 'Reference to Test Specification'),
-            'path': os.path.join(self.get_table_content_from_heading(es_table, 'Reference to Test Specification'), es_id)
-        }
+        es_spec_doc.parent_docs.append(self.tc_md_doc)
+        test_spec_id = self.get_table_content_from_heading(es_table, 'Reference to Test Specification').strip()
+        if test_spec_id in self.ts_md_docs:
+            es_spec_doc.parent_docs.append(self.ts_md_docs[test_spec_id])
 
-        es_content = self.new_section(sub_sections=[es_tabl_section], header=es_header, **extra)  
-        return es_content
+        return es_spec_doc
     
     def parse_tc_table(self, table):
         tc_table = self.parse_table(table)
-        for row in tc_table['rows']:
-            for index, first_cell in enumerate(row['cells']):
-                if first_cell['text']:
+        for row in tc_table.rows:
+            for first_cell in row.cells:
+                if first_cell.text.strip():
                     break
-            id = first_cell['text'].split('\n')[0]
+            id = first_cell.paragraphs[0].text
             id = id.split(':')[0].strip()
-            row['cells'][index] = self.create_simple_cell_dict(id, is_heading=True, colspan=first_cell['colspan'])
+            first_cell.paragraphs[0].text = id
+            first_cell.paragraphs = first_cell.paragraphs[:1]
+            first_cell.is_heading = True
+
         return tc_table
     
-
-def get_test_cases(folder_or_doc, recurse=False):
-    files_to_convert = []
-
-    if os.path.isdir(folder_or_doc):
-        for f in os.scandir(folder_or_doc):
-            if f.is_file() and f.path.endswith('.docx'):
-                files_to_convert.append(f.path)
-            elif recurse and f.is_dir():
-                files_to_convert.extend(get_test_cases(f, recurse=recurse))
-    elif os.path.isfile(folder_or_doc) and folder_or_doc.endswith('.docx'):
-        files_to_convert.append(folder_or_doc)
-    
-    return files_to_convert
-
-if __name__ == '__main__':
-    excel_template_default = os.path.join(os.path.dirname(__file__), 'template', 'HTD_TEMPLATE_V1.3.xlsx')
-
-    parser = argparse.ArgumentParser(description='Converts test cases according to the ERIGrid HTD Template from Word into Excel files.')
-    parser.add_argument('path', help='Path to either a Word file or a folder. If a folder is provided, all Word files in that folder will be converted.')
-    parser.add_argument('-t', '--excel-template', help='Path to the Excel template that should be used. Standard: {0}'.format(excel_template_default),
-                        default=os.path.join(os.path.dirname(os.path.abspath(__file__)), excel_template_default))
-    parser.add_argument('-f', '--create-folder', help='Saves the Excel file and extracted images to a folder with the name of Word file.', 
-                        action='store_true')
-    parser.add_argument('-c', '--copy-word-file', help='Copies the Word file into the new folder', action='store_true')
-    parser.add_argument('-r', '--recurse', help='Recurse subfolders', action='store_true')
-    parser.add_argument('-u', '--update', help='Updates an already existing Excel file to a new template version and adds any new content. Can be used to update previously converted test cases.', action='store_true')
-    args = parser.parse_args()    
-
-    doc_filename = args.path
-    template_path = args.excel_template
-    create_folder = args.create_folder
-    copy_word_file = args.copy_word_file
-    recurse = args.recurse
-    update = args.update
-
-    files_to_convert = get_test_cases(doc_filename, recurse=recurse)
-        
-    for f in files_to_convert:
-        print('\nConverting {0}'.format(f))
-        tcc = TestCaseConverter()
-        tcc.convert(f, template_path, create_folder=create_folder, copy_word_file=copy_word_file, update=update)

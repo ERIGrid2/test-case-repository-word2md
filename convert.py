@@ -6,17 +6,28 @@ from datetime import date
 import chevron
 import yaml
 import logging
+from dataclasses import dataclass
 
 from word2md.converter_factory import get_converter
 from word2md.converter_base import MarkdownDocument
 
-class OutputDocument:
+class OutputDocument_old:
     def __init__(self, header=None, content=None, output_dir=None, file_name=None, attachments=None) -> None:
         self.header = header
         self.content = content
         self.output_dir = output_dir
         self.file_name = file_name
         self.attachments = attachments or []
+
+@dataclass
+class OutputDocument:
+    markdown_document : MarkdownDocument = None
+    output_dir : str = None
+    file_name : str = None
+
+    # Additional header information
+    weight : int = 1
+    date : str = None
 
 class ConverterManager:
 
@@ -29,10 +40,19 @@ class ConverterManager:
 
     def to_md(self, output_doc : OutputDocument):    
         md_result = {'header': None, 'content': None}
+        
+        md_header = {}
+        md_header['title'] = self.escape_quotes(output_doc.markdown_document.title)
+        md_header['linkTitle'] = self.escape_quotes(output_doc.markdown_document.short_title)
+        md_header['description'] = self.escape_quotes(output_doc.markdown_document.description)
+        md_header['date'] = output_doc.date
+        md_header['weight'] = output_doc.weight
 
-        md_result['header'] = yaml.dump(output_doc.header)
+        md_result['header'] = yaml.dump(md_header)
 
-        md_result['content'] = self.render_mustache(output_doc.content, 'MDContent.mustache')
+        content = output_doc.markdown_document.to_dict()
+
+        md_result['content'] = self.render_mustache(content, 'MDContent.mustache')
 
         return self.render_mustache(md_result, 'MDDocument.mustache')
         
@@ -45,18 +65,18 @@ class ConverterManager:
             md_file_content = chevron.render(template=template, data=md_content, partials_path=templates_path)
             return md_file_content
 
-    def convert_file(self, doc_filename):
+    def convert_file(self, doc_filename) -> List[MarkdownDocument]:
         document = None
         try:
             document = Document(doc_filename)
         except:
             logging.error('ERROR: Could not open Word file: {0}'.format(doc_filename))
-            return
+            return []
         
         converter = get_converter(document, no_emf=self.no_emf)
         if converter is None:
             logging.error('ERROR: No converter avilable for this type of document.')
-            return
+            return []
         
         logging.info(f'{doc_filename} -> {converter.CONVERTER_TYPE}')
         
@@ -67,45 +87,13 @@ class ConverterManager:
             if converter.is_extension:
                 md_doc.is_extension = True            
 
-        return md_documents
-            
+        return md_documents     
 
     def make_sure_exisits(self, folder_path):
         try:
             os.makedirs(folder_path)
         except FileExistsError as e:
             pass
-
-    def has_subfolders(self, folder_path):
-        for root, directories, files in os.walk(folder_path):
-            if directories:
-                return True
-        return False
-
-
-    def get_files_to_convert(self, folder_or_doc, output_dir, recurse=False, folder_prefix=None):
-        if folder_prefix is None:
-            folder_prefix = folder_or_doc
-
-        files_to_convert = []
-
-        if os.path.isdir(folder_or_doc):
-            for f in os.scandir(folder_or_doc):
-                if f.is_file() and f.path.endswith('.docx'):
-                    output_file_dirname = os.path.join(output_dir, os.path.relpath(os.path.dirname(f.path), folder_prefix))
-                    files_to_convert.append({
-                        'file_path': f.path,
-                        'output_dir': output_file_dirname
-                    })
-                elif recurse and f.is_dir():
-                    files_to_convert.extend(self.get_files_to_convert(f, output_dir, recurse=recurse, folder_prefix=folder_prefix))
-        elif os.path.isfile(folder_or_doc) and folder_or_doc.endswith('.docx'):
-            files_to_convert.append({
-                'file_path': folder_or_doc,
-                'output_dir': output_dir
-            })
-        
-        return files_to_convert
     
     def convert(self):
         output_docs = []
@@ -123,11 +111,10 @@ class ConverterManager:
                 output.write(md_str)
 
             # Print attachments
-            for attachment in output_doc.attachments:
-                attachment_path = os.path.join(output_doc.output_dir, attachment['path'])        
+            for attachment in output_doc.markdown_document.attachments:
+                attachment_path = os.path.join(output_doc.output_dir, attachment.src)        
                 with open(attachment_path, 'wb') as fs:
-                    fs.write(attachment['data'])
-
+                    fs.write(attachment.data)
 
     def convert_folder(self, folder, base_output_dir, recurse=False, folder_prefix=None) -> List[OutputDocument]:
         output_docs = []
@@ -159,16 +146,23 @@ class ConverterManager:
             md_header = {}
             md_header['title'] = self.escape_quotes(md_doc.title)
             md_header['linkTitle'] = self.escape_quotes(md_doc.short_title)
-            md_header['date'] = self.escape_quotes(date.today().isoformat())
             md_header['description'] = self.escape_quotes(md_doc.description)
-            md_header['weight'] = 1
+            
+            weight = 1
             if md_doc.is_extension:
-                md_header['weight'] = 10                
+                weight = 10                
             
             output_file_dir = self.get_output_file_dir(output_dir, md_doc)
             file_name = '_index.md'
             
-            output_docs.append(OutputDocument(header=md_header, content=md_doc.content, output_dir=output_file_dir, file_name=file_name, attachments=md_doc.attachments))
+            out_doc = OutputDocument(
+                markdown_document=md_doc, 
+                output_dir=output_file_dir, 
+                file_name=file_name, 
+                weight=weight, 
+                date=self.escape_quotes(date.today().isoformat())
+            )
+            output_docs.append(out_doc)
 
         return output_docs
     
