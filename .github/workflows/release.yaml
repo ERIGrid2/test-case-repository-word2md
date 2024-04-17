@@ -1,4 +1,4 @@
-name: Trigger excel2md
+name: Trigger word2md
 
 on:
   workflow_dispatch:
@@ -63,9 +63,10 @@ jobs:
       #     asset_name: erigrid2-test-cases.zip
       #     asset_content_type: application/zip
 
-      - uses: juztcode/repo-ditpatch-action@v1
+      - name: Trigger test-case-repository
+        uses: juztcode/repo-ditpatch-action@v1
         with:
           event-type: release_event
           token: ${{ secrets.REPO_TRIGGER_KEY }}
           repository: "${{ github.repository_owner }}/test-case-repository"
-          client-payload: '{"tag": "${{ github.event.client_payload.tag }}", "artifact_download_url": "${{ steps.create-artifact.outputs.artifact-url }}" }'
+          client-payload: '{"tag": "${{ github.event.client_payload.tag }}", "run_id": "${{ github.run_id }}", "artifact_download_url": "${{ steps.create-artifact.outputs.artifact-url }}" }'
