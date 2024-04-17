@@ -35,6 +35,13 @@ jobs:
         id: create-archive
         run: zip -r "${{ github.workspace }}/test-cases" test-cases
 
+      - name: Create Artifact
+        id: create-artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-cases-markdown
+          path: ./test-cases.zip
+
       # - name: Create Release
       #   id: create-release
       #   uses: actions/create-release@v1
