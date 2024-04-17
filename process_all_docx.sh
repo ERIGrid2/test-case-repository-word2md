@@ -11,28 +11,6 @@ fi
 
 mkdir -p ${OUTPUT_DIR}
 
-
-# RUN_WORD2MD=$(cat << EOM
-#   FILE=\$0
-#   OUTPUT_DIR="\$1"
-#   PREFIX="\$2"
-#   DIRNAMEPREFIX=\$(dirname "\${FILE}")
-#   IS_TLD=\$(echo \${DIRNAMEPREFIX} | grep "/")
-#   if [ \$? -eq 1 ]; then
-#     DIRNAME=/
-#   else
-#     DIRNAME=/\${DIRNAMEPREFIX#\$PREFIX}
-#   fi
-#   mkdir -p "\${OUTPUT_DIR}/\${DIRNAME}/"
-#   OUTPUT_FILE_DIRNAME="\${OUTPUT_DIR}\${DIRNAME}"
-#   echo ${OUTPUT_FILE_DIRNAME}
-#   python3 convert.py "\$FILE" "\${OUTPUT_FILE_DIRNAME}"
-# EOM
-# )
-
-# process all *.docx files from word-input and create index.md
-# find word-input/* -type f -name '*.docx' -exec sh -c "$RUN_WORD2MD" {} ${OUTPUT_DIR} "word-input/" ';'
-
 python3 convert.py -r -e ./word-input ${OUTPUT_DIR}
 
 find "${OUTPUT_DIR}" -type d -exec sh -c '
@@ -53,3 +31,15 @@ EOF
     fi
   fi
 ' {} ${OUTPUT_DIR} ';'
+
+RUN_EMF2PNG=$(cat << EOM
+  FILE=\$0
+  OUTDIR=\$(dirname "\${FILE}")
+  FILE_PNG="\${FILE%.*}.png"
+  libreoffice --nologo --norestore --invisible --headless --convert-to png "\$FILE" --outdir "\$OUTDIR"
+  convert -trim "\${FILE_PNG}" "\${FILE_PNG}"
+EOM
+)
+
+# process all *.emf files from word-input and create index.md
+find ${OUTPUT_DIR}/* -type f -name '*.emf' -exec sh -c "$RUN_EMF2PNG" {} ';'

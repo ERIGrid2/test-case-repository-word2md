@@ -3,6 +3,17 @@ repo_name=$2
 file_request=$3
 destination=$4
 release_version=$5
+
+if [ -z "$5" ]
+  then
+    latest_url=$(wget https://github.com/${owner_url}/${repo_name}/releases/latest --max-redirect=0 2>&1 | grep Location)
+    # echo "Latest URL: $latest_url"
+    prefix="Location: https://github.com/${owner_url}/${repo_name}/releases/tag/"
+    suffix=" [following]"
+    tail=${latest_url#"$prefix"}
+    release_version=${tail%"$suffix"}
+fi
+
 echo "Requesting release version: $release_version"
 wget_received=8
 retry_count=0
