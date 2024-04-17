@@ -14,7 +14,7 @@ jobs:
       # - name: Test
       #   run: pwd
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       # - name: Copy
       #   run: cp -r ./examples/* ./word-input/
       # - name: Get Excel-input
@@ -64,7 +64,7 @@ jobs:
       #     asset_content_type: application/zip
 
       - name: Trigger test-case-repository
-        uses: juztcode/repo-ditpatch-action@v1
+        uses: juztcode/repo-ditpatch-action@v3
         with:
           event-type: release_event
           token: ${{ secrets.REPO_TRIGGER_KEY }}
