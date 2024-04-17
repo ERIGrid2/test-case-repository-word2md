@@ -39,7 +39,7 @@ jobs:
         id: create-artifact
         uses: actions/upload-artifact@v4
         with:
-          name: test-cases-markdown.zip
+          name: test-cases-markdown
           path: ./test-cases/
 
       # - name: Create Release
