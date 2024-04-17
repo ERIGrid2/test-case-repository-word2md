@@ -31,16 +31,16 @@ jobs:
       # - name: Convert EMF to PNG
       #   uses: ./emf2png/
 
-      - name: Create Archive
-        id: create-archive
-        run: zip -r "${{ github.workspace }}/test-cases" test-cases
+      # - name: Create Archive
+      #   id: create-archive
+      #   run: zip -r "${{ github.workspace }}/test-cases" test-cases
 
       - name: Create Artifact
         id: create-artifact
         uses: actions/upload-artifact@v4
         with:
-          name: test-cases-markdown
-          path: ./test-cases.zip
+          name: test-cases-markdown.zip
+          path: ./test-cases/
 
       # - name: Create Release
       #   id: create-release
