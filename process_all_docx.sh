@@ -13,7 +13,7 @@ mkdir -p ${OUTPUT_DIR}
 
 python3 convert.py -r -e ./word-input ${OUTPUT_DIR}
 
-find "${OUTPUT_DIR}/*" -type d -exec sh -c '
+find "${OUTPUT_DIR}"/* -type d -exec sh -c '
   DIRPATH=$0
   DIRNAME=$(basename "$DIRPATH")
   if [ ! -f "${DIRPATH}/index.md" ]
